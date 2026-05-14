@@ -1,0 +1,69 @@
+---
+- name: Tu dong hoa trien khai Unique UA
+  hosts: localhost
+  become: yes
+  vars:
+    project_dir: "/home/duc/hdc/btapTT/BaiTT/Bai34"
+    venv_dir: "/home/duc/hdc/btapTT/BaiTT/Bai34/venv"
+
+  tasks:
+    - name: 1. Cai dat phan mem
+      apt:
+        name: [nginx, redis-server, supervisor, python3-venv]
+        state: present
+        update_cache: yes
+
+    - name: 2. Dam bao Redis run
+      service:
+        name: redis-server
+        state: started
+        enabled: yes
+
+    - name: 3.THiet lap moi truong ao PYthon va cai thu vien
+      pip:
+          requirements: "{{ project_dir }}/requirements.txt"
+          virtualenv: "{{ venv_dir }}"
+          virtualenv_command: python3 -m venv
+
+    - name: 4.Copy cya hinh Supervisor vao he thong
+      copy: 
+        src: "{{ project_dir }}/unique_ua.conf"
+        dest: "/etc/supervisor/conf.d/unique_ua.conf"
+      notify: Reload Supervisor
+
+    - name: 5. Cai hinh Nginx lam Reverse Proxy
+      copy: 
+        content: |
+          server {
+              listen 80;
+              location / {
+                    proxy_pass http://127.0.0.1:5000;
+                    proxy_set_header Host $host;
+                    proxy_set_header X-Real-IP $remote_addr;
+              }
+          }
+        dest: "/etc/nginx/sites-available/unique_ua"
+      notify: Restart Nginx
+
+    - name: 6. Kich hoat cau hinh Nginx
+      file:
+        src: "/etc/nginx/sites-available/unique_ua"
+        dest: "/etc/nginx/sites-enabled/unique_ua"
+        state: link
+
+    - name: 7. Don dep file Nginx mac dinh
+      file:
+        path: "/etc/nginx/sites-enabled/default"
+        state: absent
+
+  handlers:
+     - name: Reload Supervisor
+       shell : |
+          supervisorctl reread
+          supervisorctl update
+          supervisorctl restart unique_ua
+
+     - name: Restart Nginx
+       service: 
+           name: nginx
+           state: restarted
